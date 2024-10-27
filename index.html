@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Map with Leaflet</title>
+        <link rel="stylesheet"
+            href="https://unpkg.com/leaflet/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+        <style>
+        .container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+
+            .date-filter-box {
+                padding: 10px 30px;
+            }
+        }
+
+        #monthSelector {
+            margin: 10px;
+        }
+
+        .month-box {
+            display: inline-block;
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+            position: relative;
+
+            &::after {
+                content: "";
+                position: absolute;
+                top: -3px;
+                left: 18px;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background-color: #000;
+            }
+
+            &:not(:last-child):before {
+                content: "";
+                position: absolute;
+                top: 0px;
+                left: 18px;
+                width: 90px;
+                height: 2px;
+                background-color: #000;
+            }
+        }
+
+        .selected {
+            &::after {
+                background-color: #007bff;
+                color: white;
+                width: 18px;
+                top: -8px;
+                left: 12px;
+                height: 18px;
+            }
+        }
+    </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <div class="date-filter-box">
+                <input type="date" id="dateFilter" />
+                <button id="filterButton">Filter</button>
+                <button id="showAllButton">Show All</button>
+
+                <select name="elaqe_novu" id="elaqe-novu-select">
+                    <option value>Əlaqə növü</option>
+                    <option value="Görüş oldu ">Görüş oldu</option>
+                    <option value="Görüş  olmadı ">Görüş olmadı</option>
+                </select>
+
+                <select name="masul_sexsi" id="masul-sexsi-select">
+                    <option value="">Bölgə üzrə Məsul şəxs</option>
+                    <!-- Options will be populated dynamically -->
+                </select>
+            </div>
+            <div id="monthSelector">
+                <div class="month-box" data-month="0">Yanvar</div>
+                <div class="month-box" data-month="1">Fevral</div>
+                <div class="month-box" data-month="2">Mart</div>
+                <div class="month-box" data-month="3">Aprel</div>
+                <div class="month-box" data-month="4">May</div>
+                <div class="month-box" data-month="5">İyun</div>
+                <div class="month-box" data-month="6">İyul</div>
+                <div class="month-box" data-month="7">Avqust</div>
+                <div class="month-box" data-month="8">Sentyabr</div>
+                <div class="month-box" data-month="9">Oktyabr</div>
+                <div class="month-box" data-month="10">Noyabr</div>
+                <div class="month-box" data-month="12">Dekabr</div>
+            </div>
+        </div>
+        <div id="map" style="height: 80vh; width: 100%;"></div>
+
+        <script>
+        const map = L.map('map').setView([40.381, 49.811], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        let markers = [];
+        let selectedMonths = [];
+        let selectedOwner = '';
+
+        fetch('./data.json')
+            .then(response => response.json())
+            .then(data => {
+                const ownerSet = new Set();
+                data?.forEach(item => {
+                    if (item.location) {
+                        const [latStr, lngStr] = item.location.split(',').map(coord => coord.trim());
+                        const lat = parseFloat(latStr);
+                        const lng = parseFloat(lngStr);
+
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            const visitDate = serialNumberToDate(item['Səfər tarixi ']);
+                            const month = visitDate.getMonth();
+                            const formattedDate = visitDate.toLocaleDateString();
+                            const contentType = item["1.Əlaqə Növü"]
+                            const owner = item["Bölgə üzrə Məsul şəxs"];
+
+                            const marker = L.marker([lat, lng]).addTo(map);
+                            marker.bindPopup(`Visitor: ${item['işçinin Ad və Soyadı:']} <br/> Visit Date: ${formattedDate} <br/> Ünvan: ${item["Ünvan"]}`);
+
+                            markers.push({ marker, month, visitDate: formattedDate, contentType, owner });
+                            ownerSet.add(owner)
+                        } else {
+                            console.error(`Invalid coordinates: ${item.location}`);
+                        }
+                    }
+                });
+                
+
+                const selectOwner = document.getElementById('masul-sexsi-select');
+                ownerSet.forEach(owner => {
+                    const option = document.createElement('option');
+                    option.value = owner;
+                    option.textContent = owner;
+                    selectOwner.appendChild(option);
+                });
+            })
+            .catch(error => console.error("Error loading JSON data:", error));
+
+        document.querySelectorAll('.month-box').forEach(box => {
+            box.addEventListener('click', () => {
+                const selectedMonth = parseInt(box.dataset.month);
+                const index = selectedMonths.indexOf(selectedMonth);
+
+                if (index === -1) {
+                    selectedMonths.push(selectedMonth);
+                    box.classList.add('selected');
+                } else {
+                    selectedMonths.splice(index, 1);
+                    box.classList.remove('selected');
+                }
+
+                updateMap();
+            });
+        });
+
+        function updateMap() {
+            markers.forEach(item => {
+                map.removeLayer(item.marker);
+            });
+
+            markers.forEach(item => {
+                if (selectedMonths.includes(item.month)) {
+                    item.marker.addTo(map);
+                }
+            });
+        }
+
+        document.getElementById('filterButton').addEventListener('click', () => {
+            const selectedDate = new Date(document.getElementById('dateFilter').value).toLocaleDateString();
+            markers.forEach(item => {
+                map.removeLayer(item.marker);
+            });
+
+            markers.forEach(item => {
+                if (selectedDate === item.visitDate)
+                    item.marker.addTo(map);
+            });
+        });
+
+        document.getElementById('showAllButton').addEventListener('click', () => {
+            markers.forEach(item => {
+                map.removeLayer(item.marker);
+            });
+
+            markers.forEach(item => {
+                item.marker.addTo(map);
+            });
+        });
+
+        document.getElementById('elaqe-novu-select').addEventListener('change', (event) => {
+            selectedContactType = event.target.value;
+
+            if (selectedContactType === '') {
+                markers.forEach(item => {
+                    item.marker.addTo(map);
+                });
+                return
+            }
+            markers.forEach(item => {
+                map.removeLayer(item.marker);
+            });
+
+            markers.forEach(item => {
+                if (selectedContactType === item.contentType) {
+                    item.marker.addTo(map);
+                }
+            });
+        });
+
+        document.getElementById('masul-sexsi-select').addEventListener('change', (event) => {
+            selectedOwner = event.target.value;
+
+            if (selectedOwner === '') {
+                markers.forEach(item => {
+                    item.marker.addTo(map);
+                });
+                return
+            }
+
+            markers.forEach(item => {
+                map.removeLayer(item.marker);
+            });
+
+            markers.forEach(item => {
+                if (selectedOwner === item.owner) {
+                    item.marker.addTo(map);
+                }
+            });
+        });
+
+        function serialNumberToDate(serial) {
+            const startDate = new Date(1899, 11, 30);
+            return new Date(startDate.getTime() + serial * 86400000);
+        }
+    </script>
+    </body>
+
+</html>
